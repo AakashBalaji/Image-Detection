@@ -1,53 +1,81 @@
-# USAGE
-# python faster_facial_landmarks.py --shape-predictor shape_predictor_5_face_landmarks.dat
-
-# import the necessary packages
-from imutils.video import VideoStream
-from imutils import face_utils
-import argparse
-import imutils
-import time
-import dlib
+# import required packages
 import cv2
+import dlib
+import argparse
+import time
 
-# construct the argument parser and parse the arguments
+# handle command line arguments
 ap = argparse.ArgumentParser()
-ap.add_argument("-p", "--shape-predictor", required=True,
-                help="path to facial landmark predictor")
-args = vars(ap.parse_args())
+ap.add_argument('-i', '--image', required=True, help='path to image file')
+ap.add_argument('-w', '--weights', default='./mmod_human_face_detector.dat',
+               help='path to weights file')
+args = ap.parse_args()
 
-# initialize dlib's face detector (HOG-based) and then create the
-# facial landmark predictor
-print("[INFO] loading facial landmark predictor...")
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor(args["shape_predictor"])
+# load input image
+image = cv2.imread(args.image)
 
-# initialize the video stream and sleep for a bit, allowing the
-# camera sensor to warm up
-print("[INFO] camera sensor warming up...")
-vs = VideoStream(src=1).start()
-# vs = VideoStream(usePiCamera=True).start() # Raspberry Pi
-time.sleep(2.0)
+if image is None:
+   print("Could not read input image")
+   exit()
 
-while True:
-    # get video frame
-    ret, img = img.read()
+# initialize hog + svm based face detector
+hog_face_detector = dlib.get_frontal_face_detector()
 
-    input_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img_h, img_w, _ = cv2.shape(input_img)
+# initialize cnn based face detector with the weights
+cnn_face_detector = dlib.cnn_face_detection_model_v1(args.weights)
 
-    detected = detector(input_img, 1)
+start = time.time()
 
-    for i, d in enumerate(detected):
-        x1, y1, x2, y2, w, h = d.left(), d.top(), d.right() + 1, d.bottom() + 1, d.width(), d.height()
-        cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 2)
+# apply face detection (hog)
+faces_hog = hog_face_detector(image, 1)
 
-    cv2.imshow("result", img)
-    key = cv2.waitKey(30)
+end = time.time()
+print("Execution Time (in seconds) :")
+print("HOG : ", format(end - start, '.2f'))
 
-    if key == 27:
-        break
+# loop over detected faces
+for face in faces_hog:
+   x = face.left()
+   y = face.top()
+   w = face.right() - x
+   h = face.bottom() - y
 
-# do a bit of cleanup
+   # draw box over face
+   cv2.rectangle(image, (x,y), (x+w,y+h), (0,255,0), 2)
+
+
+start = time.time()
+
+# apply face detection (cnn)
+faces_cnn = cnn_face_detector(image, 1)
+
+end = time.time()
+print("CNN : ", format(end - start, '.2f'))
+
+# loop over detected faces
+for face in faces_cnn:
+   x = face.rect.left()
+   y = face.rect.top()
+   w = face.rect.right() - x
+   h = face.rect.bottom() - y
+
+    # draw box over face
+   cv2.rectangle(image, (x,y), (x+w,y+h), (0,0,255), 2)
+
+# write at the top left corner of the image
+# for color identification
+img_height, img_width = image.shape[:2]
+cv2.putText(image, "HOG", (img_width-50,20), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+               (0,255,0), 2)
+cv2.putText(image, "CNN", (img_width-50,40), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+               (0,0,255), 2)
+
+# display output image
+cv2.imshow("face detection with dlib", image)
+cv2.waitKey()
+
+# save output image
+cv2.imwrite("cnn_face_detection.png", image)
+
+# close all windows
 cv2.destroyAllWindows()
-vs.stop()
